@@ -45,11 +45,6 @@ class RedisConfig(BaseModel):
 
 class NatsConfig(BaseModel):
     servers: str | list[str] = Field(..., description="NATS servers.")
-    delayed_consumer_subject: str = Field(..., description="NATS subject for delayed consumer.")
-    delayed_consumer_stream: str = Field(..., description="NATS stream for delayed messages.")
-    delayed_consumer_durable_name: str = Field(
-        ..., description="Durable consumer name for delayed processing."
-    )
 
 
 class AdminConfig(BaseModel):
@@ -115,9 +110,6 @@ def get_config() -> AppConfig:
     )
     nats = NatsConfig(
         servers=_settings.nats.servers,
-        delayed_consumer_subject=_settings.nats.delayed_consumer_subject,
-        delayed_consumer_stream=_settings.nats.delayed_consumer_stream,
-        delayed_consumer_durable_name=_settings.nats.delayed_consumer_durable_name,
     )
     admin = AdminConfig(
         admin_id=_settings.admin_id,

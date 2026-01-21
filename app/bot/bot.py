@@ -1,80 +1,93 @@
 import asyncio
 import logging
-
-import psycopg_pool
 import redis
+
 from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 from aiogram.filters import ExceptionTypeFilter
 from aiogram.fsm.storage.base import DefaultKeyBuilder
+from aiogram.fsm.storage.redis import RedisStorage
+from aiogram.types import ChatAdministratorRights
+
 from aiogram_dialog import setup_dialogs
 from aiogram_dialog.api.entities import DIALOG_EVENT_NAME
 from aiogram_dialog.api.exceptions import UnknownIntent, UnknownState
 from fluentogram import TranslatorHub
 
 from app.bot.dialogs.flows import dialogs
-from app.bot.handlers import routers
+from app.bot.handlers import routers, commands_router, user_status_router, groups_router
 from app.bot.handlers.errors import on_unknown_intent, on_unknown_state
 from app.bot.i18n.translator_hub import create_translator_hub
-from app.bot.middlewares.database import DataBaseMiddleware
+from app.bot.middlewares.database import DbSessionMiddleware
 from app.bot.middlewares.get_user import GetUserMiddleware
+from app.bot.middlewares.get_group import GetGroupMiddleware
 from app.bot.middlewares.i18n import TranslatorRunnerMiddleware
 from app.bot.middlewares.shadow_ban import ShadowBanMiddleware
-from app.infrastructure.cache.connect_to_redis import get_redis_pool
-from app.infrastructure.database.connection.connect_to_pg import get_pg_pool
-from app.infrastructure.storage.nats_connect import connect_to_nats
-from app.infrastructure.storage.storage.nats_storage import NatsStorage
-from app.services.delay_service.start_consumer import start_delayed_consumer
+
+from app.infrastructure.database.db import async_session_maker
+from app.infrastructure.cache import get_redis_pool
+
 from app.services.scheduler.taskiq_broker import broker, redis_source
+
 from config.config import get_config
 
 logger = logging.getLogger(__name__)
 
 
+async def setup_bot_admin_rights(bot: Bot) -> None:
+    logger.info("Setting default bot admin rights")
+    bot_rights = ChatAdministratorRights(
+        is_anonymous=False,
+        can_manage_chat=True,
+        can_delete_messages=True,
+        can_manage_video_chats=False,
+        can_restrict_members=False,
+        can_promote_members=False,
+        can_change_info=False,
+        can_invite_users=False,
+        can_post_stories=False,
+        can_edit_stories=False,
+        can_delete_stories=False,
+    )
+    await bot.set_my_default_administrator_rights(rights=bot_rights, for_channels=False)
+
+
 async def main():
-    logger.info("Starting bot")
-    
     config = get_config()
 
-    nc, js = await connect_to_nats(servers=config.nats.servers)
-
-    storage: NatsStorage = await NatsStorage(
-        nc=nc, js=js, key_builder=DefaultKeyBuilder(with_destiny=True, separator=".")
-    ).create_storage()
-
-    bot = Bot(
-        token=config.bot.token,
-        default=DefaultBotProperties(parse_mode=ParseMode(config.bot.parse_mode)),
+    redis_client: redis.asyncio.Redis = await get_redis_pool(
+        host=config.redis.host,
+        port=config.redis.port,
+        db=config.redis.database,
+        username=config.redis.username,
+        password=config.redis.password,
     )
+
+    bot = Bot(token=config.bot.token,
+              default=DefaultBotProperties(parse_mode=ParseMode(config.bot.parse_mode)))
+
+    await setup_bot_admin_rights(bot=bot)
+
+    storage = RedisStorage(
+        redis=redis_client,
+        key_builder=DefaultKeyBuilder(
+            with_destiny=True,
+        ),
+    )
+
     dp = Dispatcher(storage=storage)
-    if config.cache.use_cache:
-        cache_pool: redis.asyncio.Redis = await get_redis_pool(
-            db=config.redis.database,
-            host=config.redis.host,
-            port=config.redis.port,
-            username=config.redis.username,
-            password=config.redis.password,
-        )
-        dp.workflow_data.update(_cache_pool=cache_pool)
 
-    db_pool: psycopg_pool.AsyncConnectionPool = await get_pg_pool(
-        db_name=config.postgres.name,
-        host=config.postgres.host,
-        port=config.postgres.port,
-        user=config.postgres.user,
-        password=config.postgres.password,
-    )
+    cache_pool: redis.asyncio.Redis = redis_client
 
     translator_hub: TranslatorHub = create_translator_hub()
 
     dp.workflow_data.update(
-        redis_source=redis_source,
         bot_locales=sorted(config.i18n.locales),
         translator_hub=translator_hub,
-        db_pool=db_pool,
+        _cache_pool=cache_pool,
+        redis_source=redis_source,
     )
-
     logger.info("Registering error handlers")
     dp.errors.register(
         on_unknown_intent,
@@ -85,63 +98,73 @@ async def main():
         ExceptionTypeFilter(UnknownState),
     )
 
+    # it needs to handle only filtered updates
+    logger.info("Setting up middlewares for private routers")
+    private_middlewares = [
+        DbSessionMiddleware(async_session_maker),
+        GetUserMiddleware(),
+        ShadowBanMiddleware(),
+        TranslatorRunnerMiddleware(),
+    ]
+
+    logger.info("Including private chat middlewares")
+    for middleware in private_middlewares:
+        commands_router.message.middleware(middleware)
+        commands_router.callback_query.middleware(middleware)
+        user_status_router.my_chat_member.middleware(middleware)
+
+        for dialog in dialogs:
+            dialog.message.middleware(middleware)
+            dialog.callback_query.middleware(middleware)
+
+    logger.info("Including groups middlewares")
+    groups_router.chat_member.middleware(DbSessionMiddleware(async_session_maker))
+    groups_router.chat_member.middleware(GetUserMiddleware())
+    groups_router.chat_member.middleware(GetGroupMiddleware())
+    groups_router.chat_member.middleware(TranslatorRunnerMiddleware())
+
+    groups_router.my_chat_member.middleware(DbSessionMiddleware(async_session_maker))
+    groups_router.my_chat_member.middleware(GetUserMiddleware())
+    groups_router.my_chat_member.middleware(GetGroupMiddleware())
+    groups_router.my_chat_member.middleware(TranslatorRunnerMiddleware())
+
     logger.info("Including routers")
     dp.include_routers(*routers)
 
     logger.info("Including dialogs")
     dp.include_routers(*dialogs)
 
-    logger.info("Including middlewares")
-    dp.update.middleware(DataBaseMiddleware())
-    dp.update.middleware(GetUserMiddleware())
-    dp.update.middleware(ShadowBanMiddleware())
-    dp.update.middleware(TranslatorRunnerMiddleware())
-
     logger.info("Including error middlewares")
-    dp.errors.middleware(DataBaseMiddleware())
+    dp.errors.middleware(DbSessionMiddleware(async_session_maker))
     dp.errors.middleware(GetUserMiddleware())
     dp.errors.middleware(ShadowBanMiddleware())
     dp.errors.middleware(TranslatorRunnerMiddleware())
 
     logger.info("Setting up dialogs")
     bg_factory = setup_dialogs(dp)
+    dp.workflow_data.update(bg_factory=bg_factory)
 
     logger.info("Including observers middlewares")
-    dp.observers[DIALOG_EVENT_NAME].outer_middleware(DataBaseMiddleware())
+    dp.observers[DIALOG_EVENT_NAME].outer_middleware(DbSessionMiddleware(async_session_maker))
     dp.observers[DIALOG_EVENT_NAME].outer_middleware(GetUserMiddleware())
     dp.observers[DIALOG_EVENT_NAME].outer_middleware(ShadowBanMiddleware())
     dp.observers[DIALOG_EVENT_NAME].outer_middleware(TranslatorRunnerMiddleware())
 
-    logger.info("Starting taskiq broker")
-    await broker.startup()
+    if not broker.is_worker_process:
+        logger.info("Starting taskiq broker")
+        await broker.startup()
 
     # Launch polling and delayed message consumer
     try:
-        await asyncio.gather(
-            dp.start_polling(
-                bot,
-                js=js,
-                delay_del_subject=config.nats.delayed_consumer_subject,
-                bg_factory=bg_factory,
-            ),
-            start_delayed_consumer(
-                nc=nc,
-                js=js,
-                bot=bot,
-                subject=config.nats.delayed_consumer_subject,
-                stream=config.nats.delayed_consumer_stream,
-                durable_name=config.nats.delayed_consumer_durable_name,
-            ),
-        )
+        await dp.start_polling(
+            bot,
+            bg_factory=bg_factory,
+        ),
     except Exception as e:
         logger.exception(e)
     finally:
-        await nc.close()
-        logger.info("Connection to NATS closed")
-        await db_pool.close()
-        logger.info("Connection to Postgres closed")
-        await broker.shutdown()
-        logger.info("Connection to taskiq-broker closed")
-        if dp.workflow_data.get("_cache_pool"):
-            await cache_pool.close()
-            logger.info("Connection to Redis closed")
+        await cache_pool.close()
+        logger.info("Connection to Redis closed")
+        if not broker.is_worker_process:
+            logger.info("Connection to taskiq-broker closed")
+            await broker.shutdown()

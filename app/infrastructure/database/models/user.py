@@ -3,7 +3,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from app.infrastructure.database.enums.user_roles import UserRole
 from app.infrastructure.database.models.base_model import Base
-from sqlalchemy.dialects.postgresql import ENUM
+from sqlalchemy.dialects.postgresql import ENUM as PgEnum
 
 
 class UserModel(Base):
@@ -19,7 +19,7 @@ class UserModel(Base):
     first_name: Mapped[str | None] = mapped_column(String(64))
     last_name: Mapped[str | None] = mapped_column(String(64))
     language_code: Mapped[str | None] = mapped_column(String(10), default="ru")
-    role: Mapped[UserRole] = mapped_column(ENUM(UserRole, name="user_role"), default=UserRole.MEMBER)
+    role: Mapped[UserRole] = mapped_column(PgEnum(UserRole, name="user_role"), default=UserRole.MEMBER)
     is_active: Mapped[bool] = mapped_column(default=True)
     is_banned: Mapped[bool] = mapped_column(default=False)
 

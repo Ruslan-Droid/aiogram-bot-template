@@ -8,8 +8,8 @@ from sqlalchemy.ext.asyncio import async_engine_from_config
 from alembic import context
 
 from config.config import get_config
-from app.infrastructure.database.models.base_model import Base
-from app.infrastructure.database.models.user import UserModel
+from app.infrastructure.database import models
+from app.infrastructure.database.db import engine
 
 settings = get_config()
 
@@ -20,7 +20,7 @@ config.set_main_option("sqlalchemy.url", settings.postgres.url)
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
-target_metadata = Base.metadata
+target_metadata = models.Base.metadata
 
 
 # other values from the config, defined by the needs of env.py,

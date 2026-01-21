@@ -10,7 +10,7 @@ help-command =
 
     Проект на github: https://github.com/Ruslan-Droid/aiogram_bot_template
 
-bot-desription = Это шаблон бота, написанный <b>Ruslan-Droid</b>.
+bot-description = Это шаблон бота, написанный <b>Ruslan-Droid</b>.
 
                  /help
 
