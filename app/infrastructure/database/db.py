@@ -1,7 +1,9 @@
-from app.infrastructure.database.connection.base import BaseConnection
-from app.infrastructure.database.tables.users import UsersTable
+from config.config import get_config
 
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine, AsyncSession
 
-class DB:
-    def __init__(self, connection: BaseConnection) -> None:
-        self.users = UsersTable(connection=connection)
+config = get_config()
+
+engine = create_async_engine(url=config.postgres.url, echo=False)
+
+async_session_maker = async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
