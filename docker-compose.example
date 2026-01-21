@@ -1,20 +1,28 @@
 services:
   postgres:
-    image: postgres:17-alpine
-    container_name: postgres
+    image: postgres:18-alpine
+    container_name: postgres_container
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
+        reservations:
+          memory: 512M
     env_file:
       - .env
     environment:
       POSTGRES_DB: ${POSTGRES_DB}
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      PGDATA: /var/lib/postgresql/18/docker
     volumes:
-      - ./.postgres_data:/var/lib/postgresql/data
+      - ./.postgres_data:/var/lib/postgresql
     ports:
       - "${POSTGRES_PORT}:5432"
     restart: unless-stopped
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      test: [ "CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}" ]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -29,7 +37,7 @@ services:
 
   pgadmin:
     image: dpage/pgadmin4
-    container_name: pgadmin
+    container_name: pgadmin_container
     env_file:
       - .env
     environment:
@@ -53,18 +61,25 @@ services:
       - app_network
 
   redis:
-    image: redis:7.4-alpine
-    container_name: redis
-    env_file: 
+    image: redis:8.2.3-alpine
+    container_name: redis_container
+    deploy:
+      resources:
+        limits:
+          cpus: '0.3'
+          memory: 512M
+        reservations:
+          memory: 512M
+    env_file:
       - .env
     volumes:
       - ./.redis_data:/data
     restart: unless-stopped
     ports:
       - "${REDIS_PORT}:6379"
-    command: ["redis-server", "--appendonly", "yes", "--requirepass", "${REDIS_PASSWORD}"]
+    command: [ "redis-server", "--appendonly", "yes", "--requirepass", "${REDIS_PASSWORD}" ]
     healthcheck:
-      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "PING"]
+      test: [ "CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "PING" ]
       interval: 10s
       timeout: 3s
       retries: 3
@@ -75,10 +90,19 @@ services:
         max-size: "10m"
         max-file: "5"
         compress: "true"
+    networks:
+      - app_network
 
   nats:
     image: nats:latest
-    container_name: nats
+    container_name: nats_container
+    deploy:
+      resources:
+        limits:
+          cpus: '0.2'
+          memory: 512M
+        reservations:
+          memory: 512M
     entrypoint: /nats-server
     command: "-c /config/server.conf"
     ports:
@@ -88,7 +112,7 @@ services:
       - ./nats_broker/.nats_data:/data
       - ./nats_broker/config/server.conf:/config/server.conf
     healthcheck:
-      test: ["CMD", "nats-server", "-sl"]
+      test: [ "CMD", "nats-server", "-sl" ]
       interval: 5s
       timeout: 3s
       retries: 5
@@ -100,11 +124,11 @@ services:
         compress: "true"
     networks:
       - app_network
-  
+
   nats-nui:
     image: ghcr.io/nats-nui/nui:latest
-    container_name: nats-nui
-    env_file: 
+    container_name: nats-nui_container
+    env_file:
       - .env
     ports:
       - "${NUI_PORT}:31311"
@@ -127,4 +151,5 @@ services:
 
 networks:
   app_network:
+    driver: bridge
     name: app_network

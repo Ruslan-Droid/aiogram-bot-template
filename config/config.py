@@ -31,6 +31,7 @@ class PostgresConfig(BaseModel):
     port: int = Field(..., description="PostgreSQL server port.")
     user: str = Field(..., description="PostgreSQL username.")
     password: str = Field(..., description="PostgreSQL user password.")
+    url: str = Field(..., description="PostgreSQL server URL.")
 
 
 class RedisConfig(BaseModel):
@@ -39,6 +40,7 @@ class RedisConfig(BaseModel):
     database: int = Field(default=0, description="Redis database index.")
     username: str | None = Field(None, description="Optional Redis username.")
     password: str | None = Field(None, description="Optional Redis password.")
+    redis_url: str | None = Field(None, description="Redis server URL.")
 
 
 class NatsConfig(BaseModel):
@@ -50,8 +52,9 @@ class NatsConfig(BaseModel):
     )
 
 
-class CacheConfig(BaseModel):
-    use_cache: bool = Field(..., description="Enable or disable in-memory cache usage.")
+class AdminConfig(BaseModel):
+    admin_id: int = Field(..., description="Admin telegram id.")
+    admin_chat_id: int = Field(..., description="Admin telegram chatID.")
 
 
 class AppConfig(BaseModel):
@@ -61,15 +64,15 @@ class AppConfig(BaseModel):
     postgres: PostgresConfig
     redis: RedisConfig
     nats: NatsConfig
-    cache: CacheConfig
+    admin: AdminConfig
 
 
 # Инициализация Dynaconf
 _settings = Dynaconf(
     envvar_prefix=False,  # "DYNACONF",
-    environments=True,  # Автоматически использовать секцию текущей среды
+    environments=True,
     env_switcher="ENV_FOR_DYNACONF",
-    settings_files=["settings.toml", ".secrets.toml"],
+    settings_files=["settings.toml"],
     load_dotenv=True,
 )
 
@@ -79,47 +82,47 @@ def get_config() -> AppConfig:
         Returns a typed application configuration.
 
         Returns:
-            AppConfig: A validated Pydantic model containing the application settings.
+            AppConfig: A validated Pydantic model containing the application language_settings.
     """
     logs = LogsConfig(
         level_name=_settings.logs.level_name,
         format=_settings.logs.format,
     )
-
     i18n = I18nConfig(
         default_locale=_settings.i18n.default_locale,
         locales=_settings.i18n.locales,
     )
-
     bot = BotConfig(
         token=_settings.bot_token,
         parse_mode=_settings.bot.parse_mode,
     )
-
     postgres = PostgresConfig(
-        name=_settings.postgres.name,
-        host=_settings.postgres.host,
-        port=_settings.postgres.port,
-        user=_settings.postgres.user,
+        name=_settings.postgres_name,
+        host=_settings.postgres_host,
+        port=_settings.postgres_port,
+        user=_settings.postgres_user,
         password=_settings.postgres_password,
+        url=f"postgresql+asyncpg://{_settings.postgres_user}:{_settings.postgres_password}@{_settings.postgres_host}:"
+            f"{_settings.postgres_port}/{_settings.postgres_name}"
     )
-
     redis = RedisConfig(
-        host=_settings.redis.host,
-        port=_settings.redis.port,
-        database=_settings.redis.database,
+        host=_settings.redis_host,
+        port=_settings.redis_port,
+        database=_settings.redis_database,
         username=_settings.redis_username,
         password=_settings.redis_password,
+        redis_url=f"redis://{_settings.redis_username}:{_settings.redis_password}@{_settings.redis_host}:{_settings.redis_port}/{_settings.redis_database}"
     )
-
     nats = NatsConfig(
         servers=_settings.nats.servers,
         delayed_consumer_subject=_settings.nats.delayed_consumer_subject,
         delayed_consumer_stream=_settings.nats.delayed_consumer_stream,
         delayed_consumer_durable_name=_settings.nats.delayed_consumer_durable_name,
     )
-
-    cache = CacheConfig(use_cache=_settings.cache.use_cache)
+    admin = AdminConfig(
+        admin_id=_settings.admin_id,
+        admin_chat_id=_settings.admin_chat,
+    )
 
     return AppConfig(
         logs=logs,
@@ -128,5 +131,5 @@ def get_config() -> AppConfig:
         postgres=postgres,
         redis=redis,
         nats=nats,
-        cache=cache,
+        admin=admin,
     )

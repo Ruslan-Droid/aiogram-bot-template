@@ -3,27 +3,23 @@ from typing import Any, Dict
 from collections.abc import Awaitable, Callable
 
 from aiogram import BaseMiddleware
-from aiogram.types import TelegramObject, User
+from aiogram.types import TelegramObject, Chat
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.infrastructure.database.models.user import UserModel
-from app.infrastructure.database.query.user_queries import UserRepository
+from app.infrastructure.database.models.group import GroupModel
+from app.infrastructure.database.query.group_queries import GroupChatRepository
 
 logger = logging.getLogger(__name__)
 
 
-class GetUserMiddleware(BaseMiddleware):
+class GetGroupMiddleware(BaseMiddleware):
     async def __call__(
             self,
             handler: Callable[[TelegramObject, Dict[str, Any]], Awaitable[Any]],
             event: TelegramObject,
             data: Dict[str, Any],
     ) -> Any:
-        user: User = data.get("event_from_user")
-
-        if user is None:
-            return await handler(event, data)
-
+        chat: Chat = data.get("event_chat")
         session: AsyncSession = data.get("session")
 
         if session is None:
@@ -31,14 +27,15 @@ class GetUserMiddleware(BaseMiddleware):
             raise RuntimeError("Missing `session` in middleware context.")
 
         try:
-            user_repo = UserRepository(session)
-            user_row: UserModel | None = await user_repo.get_user_by_telegram_id(user.id)
+            if chat and chat.type in ["group", "supergroup"]:
+                group_repo = GroupChatRepository(session)
+                group_row: GroupModel = await group_repo.get_group_by_chat_id(telegram_chat_id=chat.id)
 
-            data["user_row"] = user_row
-            if user_row is None:
-                logger.debug("User not found in database.")
-            else:
-                logger.debug("User %s loaded successfully", user.id)
+                data["group_row"] = group_row
+                if group_row is None:
+                    logger.debug("Group not found in database.")
+                else:
+                    logger.debug("group %s loaded successfully", group_row.group_telegram_id)
 
         except Exception as e:
             logger.exception("Error in GetUserMiddleware: %s", e)

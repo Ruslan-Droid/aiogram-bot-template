@@ -8,7 +8,7 @@ from app.bot.dialogs.widgets.i18n import I18nFormat
 start_dialog = Dialog(
     Window(
         Format("{hello}"),
-        I18nFormat("bot-desription"),
+        I18nFormat("bot-description"),
         getter=get_hello,
         state=StartSG.start,
     ),
