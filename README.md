@@ -83,10 +83,6 @@ This is a template for telegram bots written in python using the `aiogram` frame
 │   │   ├── 📂 keyboards
 │   │   │   │   🐍 inline_keyboards.py
 │   │   │   │   🐍 menu_button.py
-│   │   │   │   
-│   │   │   └── 📂 __pycache__
-│   │   │           🐍 inline_keyboards.cpython-314.pyc
-│   │   │           🐍 menu_button.cpython-314.pyc
 │   │   │           
 │   │   ├── 📂 middlewares
 │   │   │   │   🐍 database.py
@@ -94,13 +90,6 @@ This is a template for telegram bots written in python using the `aiogram` frame
 │   │   │   │   🐍 get_user.py
 │   │   │   │   🐍 i18n.py
 │   │   │   │   🐍 shadow_ban.py
-│   │   │   │   
-│   │   │   └── 📂 __pycache__
-│   │   │           🐍 database.cpython-314.pyc
-│   │   │           🐍 get_group.cpython-314.pyc
-│   │   │           🐍 get_user.cpython-314.pyc
-│   │   │           🐍 i18n.cpython-314.pyc
-│   │   │           🐍 shadow_ban.cpython-314.pyc
 │   │   │           
 │   │   ├── 📂 states
 │   │   │       🐍 states.py
