@@ -23,7 +23,7 @@ stream_config = StreamConfig(
 consumer_config = ConsumerConfig(
     name="taskiq_consumer",
     durable_name="taskiq_consumer",
-    max_ack_pending=30,
+    max_ack_pending=25,
 )
 
 result_backend = RedisAsyncResultBackend(
